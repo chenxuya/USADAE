@@ -4,12 +4,14 @@ import os
 from scipy.stats import nbinom
 # 设置随机种子，确保每次运行的结果相同
 np.random.seed(42)
-outdir = './data'
+outdir = './simulation/data'
+if not os.path.exists(outdir):
+    os.makedirs(outdir)
 prefix_pre = 'sim'
-sig_gene_num = 200
+sig_gene_num = 20
 # 样本数量与基因数量
-num_samples = 10000  # 样本数量
-num_genes = 1000     # 基因数量
+num_samples = 1000  # 样本数量
+num_genes = 100     # 基因数量
 prefix = f"{prefix_pre}_{num_samples}_{num_genes}_{sig_gene_num}"
 num_confounders = 3  # 混杂因素数量
 # 新增参数配置
@@ -183,16 +185,4 @@ confounders_df['Tissue'] = group_labels
 # 保存数据为CSV文件
 gene_expression_df.to_csv(os.path.join(outdir, f'{prefix}_all_gene_expression.txt'), index=True, sep='\t', index_label='ID')  # 保存到指定路径
 confounders_df.to_csv(os.path.join(outdir, f'{prefix}_all_confounders.txt'), index=False, sep='\t')
-
-control_gene_expression = gene_expression_df.iloc[:, :num_control]
-case_gene_expression = gene_expression_df.iloc[:, num_control:]
-
-control_confounders = confounders_df.iloc[:num_control, :]
-case_confounders = confounders_df.iloc[num_control:, :]
-
-control_gene_expression.to_csv(os.path.join(outdir, f'{prefix}_control_gene_expression.txt'), index=True, sep='\t', index_label='ID')
-control_confounders.to_csv(os.path.join(outdir, f'{prefix}_control_confounders.txt'), index=False, sep='\t')
-
-case_gene_expression.to_csv(os.path.join(outdir, f'{prefix}_case_gene_expression.txt'), index=True, sep='\t', index_label='ID')
-case_confounders.to_csv(os.path.join(outdir, f'{prefix}_case_confounders.txt'), index=False, sep='\t')
 print("生成的文件已保存。")

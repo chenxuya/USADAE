@@ -25,3 +25,11 @@ dependencies = [
 
 [project.scripts]
 usadae-train = "train:main"  # 命令行入口，运行 train.py 的 main 函数
+
+[tool.hatch.build.targets.wheel]
+include = [
+    "train.py",
+    "models/*",
+    "utils/*",
+    "simulation/*"
+]

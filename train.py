@@ -254,8 +254,7 @@ class TwinAETrainer:
                     print(f"Stage3 Epoch [{epoch}/{self.stage3_epochs}] "
                         f"Recon: {avg_recon:.4f} Adv: {avg_adv:.4f} " 
                         f"TissueAdv: {avg_tissue_adv:.4f}"
-                        f" MI: {avg_mi:.4f}" 
-                        f" Lambda: {self.lambda_adv:.4f}")
+                        f" MI: {avg_mi:.4f}")
 
         if best_model_state is not None:
             self.twin_ae.load_state_dict(best_model_state)
@@ -323,18 +322,18 @@ def get_sample_weights(tissues):
     sample_weights = class_weights[tissues]
     return sample_weights
 
-def run_usadae(latent_dim=32, confouder_dim=2, drop_out=0.2, lambda_adv=1.0,lambda_tissue=1e6,
+def run_usadae(latent_dim=32, confounder_dim=2, drop_out=0.2, lambda_adv=1.0,lambda_tissue=1e6,
          stage1_epochs=30, stage2_epochs=20,stage3_epochs=20, batch_size=64,hidden_dims=[512, 256],
-         out_prefix='usadae',
+         out_prefix='usadae',random_seed=0,
          gene_expresion_df=None,tissue_labels=None, tissue_dis_hidden_num=0 ,outdir=None,separate_data=False):
     # set random seed for torch and numpy
-    torch.manual_seed(0)
-    np.random.seed(0)
-    torch.cuda.manual_seed(0)  # 如果使用 GPU，设置 CUDA 随机种子
+    torch.manual_seed(random_seed)
+    np.random.seed(random_seed)
+    torch.cuda.manual_seed(random_seed)  # 如果使用 GPU，设置 CUDA 随机种子
     input_dim = gene_expresion_df.shape[1] 
-    twin_ae = TwinAE(input_dim=input_dim, latent_dim=latent_dim, confounder_dim=confouder_dim, drop_out=drop_out,
+    twin_ae = TwinAE(input_dim=input_dim, latent_dim=latent_dim, confounder_dim=confounder_dim, drop_out=drop_out,
                      hidden_dims=hidden_dims)
-    discriminator = Discriminator(dim_b=latent_dim, dim_c=confouder_dim)
+    discriminator = Discriminator(dim_b=latent_dim, dim_c=confounder_dim)
     tissue_num = len(np.unique(tissue_labels))
     tissue_disc = TissueDiscriminator(latent_dim=latent_dim, output_dim=tissue_num, hidden_num=tissue_dis_hidden_num)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -413,14 +412,15 @@ def main():
     parser.add_argument("--confounder_dim", type=int, default=None, help="Confounder dimension (default: same as latent_dim)")
     parser.add_argument("--dropout", type=float, default=0.4, help="Dropout rate (default: %(default)s)")
     parser.add_argument("--lambda_adv", type=float, default=1.0, help="Adversarial loss weight (default: %(default)s)")
-    parser.add_argument("--lambda_tissue", type=float, default=1e6, help="Tissue loss weight (default: %(default)s)")
+    parser.add_argument("--lambda_tissue", type=float, default=10, help="Tissue loss weight (default: %(default)s)")
     parser.add_argument("--hidden_dims", nargs="*", type=int, default=[512, 256], help="Hidden layer dimensions (e.g., 512 256; default: %(default)s)")
-    
+
     # 训练参数
     parser.add_argument("--stage1_epochs", type=int, default=100, help="Stage 1 epochs (default: %(default)s)")
     parser.add_argument("--stage2_epochs", type=int, default=100, help="Stage 2 epochs (default: %(default)s)")
     parser.add_argument("--stage3_epochs", type=int, default=500, help="Stage 3 epochs (default: %(default)s)")
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size (default: %(default)s)")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed (default: %(default)s)")
 
     # 文件和输出
     parser.add_argument("--gene_expression_file", type=str, required=True, help="Path to gene expression TSV/CSV file. Rows are genes, columns are samples.")
@@ -429,6 +429,7 @@ def main():
     parser.add_argument("--out_prefix", type=str, default="usadae", help="Output file prefix (default: %(default)s)")
     
     # 预处理和数据分割
+    parser.add_argument("--log1p", action="store_true", help="Apply log1p transformation (default: False)")
     parser.add_argument("--separate_data", action="store_true", help="Separate data into train/val (80/20 split; default: False)")
     parser.add_argument("--use_kmeans", action="store_true", help="Apply KMeans gene clustering before training (default: False)")
     parser.add_argument("--kmeans_clusters", type=int, default=1500, help="Number of KMeans clusters if --use_kmeans (default: %(default)s)")
@@ -444,6 +445,9 @@ def main():
             exp_df = pd.read_csv(args.gene_expression_file, sep='\t', index_col=0).T
         else:
             raise ValueError("Unsupported file format. Please provide a CSV or TSV file.")
+        if args.log1p:
+            logger.info("Applying log1p transformation to gene expression data")
+            exp_df = exp_df.apply(np.log1p)
         if args.use_kmeans:
             logger.info("Applying KMeans clustering (n_clusters: %d)", args.kmeans_clusters)
             exp_df = kmeans_reduce_genes(exp_df.apply(np.log1p), n_clusters=args.kmeans_clusters)
@@ -464,10 +468,12 @@ def main():
         logger.error("Data loading failed: %s", e)
         raise
     confounder_dim = args.confounder_dim if args.confounder_dim is not None else args.latent_dim
+    if not os.path.exists(args.outdir):
+        os.makedirs(args.outdir)
     run_usadae(
         latent_dim=args.latent_dim,
         confounder_dim=confounder_dim,
-        dropout=args.dropout,
+        drop_out=args.dropout,
         lambda_adv=args.lambda_adv,
         lambda_tissue=args.lambda_tissue,
         hidden_dims=args.hidden_dims,
@@ -478,7 +484,7 @@ def main():
         out_prefix=args.out_prefix,
         outdir=args.outdir,
         gene_expresion_df=exp_df,
-        confounder_df=confounder_df,
+        random_seed=args.seed,
         tissue_labels=labels,
         separate_data=args.separate_data
     )
